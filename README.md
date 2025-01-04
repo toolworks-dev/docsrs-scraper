@@ -17,14 +17,14 @@ Access the web interface at http://localhost:8721
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/docsrs-scraper.git
+git clone https://github.com/toolworks-dev/docsrs-scraper.git
 cd docsrs-scraper
 ```
 
 2. Create and activate virtual environment:
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 ```
 
 3. Install dependencies:
@@ -48,5 +48,5 @@ gunicorn --bind 0.0.0.0:8721 --workers 4 --timeout 120 wsgi:app
 
 ### Command Line
 ```bash
-python docs_scraper.py https://docs.rs/wgpu/latest/wgpu/ output.md
+python docs_scraper.py https://docs.rs/wgpu/latest/wgpu output.md
 ```
