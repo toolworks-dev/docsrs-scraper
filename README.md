@@ -8,7 +8,7 @@ A web application that scrapes and converts docs.rs documentation into a single 
 git clone https://github.com/toolworks-dev/docsrs-scraper.git
 cd docsrs-scraper
 
-docker-compose up -d
+docker compose up -d
 
 Access the web interface at http://localhost:8721
 ```

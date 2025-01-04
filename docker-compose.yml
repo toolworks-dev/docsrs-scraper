@@ -1,8 +1,7 @@
-version: '3.8'
-
 services:
   docsrsscraper:
     build: .
+    user: "1000:1000"
     ports:
       - "8721:8721"
     volumes:
