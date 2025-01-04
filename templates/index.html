@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docs.rs Scraper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    {% raw %}
+    <div id="app" class="container mx-auto px-4 py-8">
+        <div class="max-w-2xl mx-auto">
+            <div class="text-center mb-8">
+                <h1 class="text-4xl font-bold text-gray-800 mb-2">Docs.rs Scraper</h1>
+                <p class="text-gray-600">Generate markdown documentation from docs.rs</p>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Crate Documentation URL</label>
+                    <div class="flex">
+                        <span class="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
+                            https://docs.rs/
+                        </span>
+                        <input 
+                            type="text" 
+                            v-model="cratePath"
+                            placeholder="wgpu/latest/wgpu"
+                            class="flex-1 rounded-r-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            :class="{'border-red-500': error}"
+                        >
+                    </div>
+                    <p class="mt-1 text-sm text-gray-500">Example: wgpu/latest/wgpu</p>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Output Filename</label>
+                    <div class="flex">
+                        <input 
+                            type="text" 
+                            v-model="filename"
+                            placeholder="documentation"
+                            class="flex-1 rounded-l-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                        <span class="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
+                            .md
+                        </span>
+                    </div>
+                </div>
+
+                <button 
+                    @click="startScraping"
+                    :disabled="isProcessing"
+                    class="w-full bg-blue-500 text-white rounded-md py-2 px-4 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+                >
+                    <span v-if="isProcessing">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>
+                        Processing...
+                    </span>
+                    <span v-else>
+                        <i class="fas fa-download mr-2"></i>
+                        Generate Documentation
+                    </span>
+                </button>
+
+                <div v-if="isProcessing" class="mt-4">
+                    <div class="bg-gray-100 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-700">Processing Documentation</span>
+                            <span class="text-xs text-gray-500">{{ progressMessages.length }} updates</span>
+                        </div>
+                        <div class="h-32 overflow-y-auto text-sm text-gray-600 font-mono" ref="progressContainer">
+                            <div v-for="(message, index) in progressMessages" :key="index" class="py-1">
+                                <span v-if="message === '...'" class="text-gray-400">{{ message }}</span>
+                                <span v-else-if="message.startsWith('ERROR:')" class="text-red-600">{{ message }}</span>
+                                <span v-else class="whitespace-pre-wrap">{{ message }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="error" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
+                <span class="block sm:inline">{{ error }}</span>
+            </div>
+
+            <div v-if="success" class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
+                <span class="block sm:inline">
+                    Documentation generated successfully! 
+                    <a :href="'/download/' + downloadFilename" class="underline font-bold">Download now</a>
+                </span>
+            </div>
+        </div>
+    </div>
+    {% endraw %}
+
+    <script>
+        const { createApp, onBeforeUnmount } = Vue
+
+        createApp({
+            data() {
+                return {
+                    cratePath: 'wgpu/latest/wgpu',
+                    filename: 'documentation',
+                    isProcessing: false,
+                    error: null,
+                    success: false,
+                    progressMessages: [],
+                    eventSource: null,
+                    sessionId: crypto.randomUUID(),
+                    downloadFilename: null
+                }
+            },
+            methods: {
+                async startScraping() {
+                    this.error = null;
+                    this.success = false;
+                    this.isProcessing = true;
+                    this.progressMessages = [];
+
+                    try {
+                        const response = await fetch('/scrape', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                cratePath: this.cratePath,
+                                filename: this.filename,
+                                sessionId: this.sessionId
+                            })
+                        });
+
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                            throw new Error(data.error || 'Failed to generate documentation');
+                        }
+
+                        this.downloadFilename = data.filename;
+
+                        this.eventSource = new EventSource(`/progress/${this.sessionId}`);
+                        this.eventSource.onmessage = (event) => {
+                            const message = event.data;
+                            
+                            if (message === "DONE") {
+                                this.success = true;
+                                this.isProcessing = false;
+                                if (this.eventSource) {
+                                    this.eventSource.close();
+                                    this.eventSource = null;
+                                }
+                            } else if (message.startsWith("ERROR:")) {
+                                this.error = message.substring(7);
+                                this.isProcessing = false;
+                                if (this.eventSource) {
+                                    this.eventSource.close();
+                                    this.eventSource = null;
+                                }
+                            } else if (message === "...") {
+                                this.progressMessages.push(message);
+                            } else {
+                                this.progressMessages.push(message);
+                                this.$nextTick(() => {
+                                    const container = this.$refs.progressContainer;
+                                    if (container) {
+                                        container.scrollTop = container.scrollHeight;
+                                    }
+                                });
+                            }
+                        };
+                        
+                        this.eventSource.onerror = (error) => {
+                            if (this.isProcessing && !this.success) {
+                                this.error = "Lost connection to server";
+                                this.isProcessing = false;
+                            }
+                            if (this.eventSource) {
+                                this.eventSource.close();
+                                this.eventSource = null;
+                            }
+                        };
+
+                        onBeforeUnmount(() => {
+                            if (this.eventSource) {
+                                this.eventSource.close();
+                                this.eventSource = null;
+                            }
+                        });
+                    } catch (err) {
+                        this.error = err.message;
+                        this.isProcessing = false;
+                    }
+                }
+            },
+            watch: {
+                progressMessages: {
+                    handler(newMessages) {
+                        if (newMessages.length > 0) {
+                            this.$nextTick(() => {
+                                const container = this.$refs.progressContainer;
+                                container.scrollTop = container.scrollHeight;
+                            });
+                        }
+                    },
+                    deep: true
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html> 

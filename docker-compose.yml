@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  docsrsscraper:
+    build: .
+    ports:
+      - "8721:8721"
+    volumes:
+      - ./downloads:/app/downloads
+    restart: unless-stopped 
