@@ -82,6 +82,21 @@ class DocsRsScraper:
                     page_content.append(f"\n## Details\n\n{doc_text}\n")
                     self.progress_callback("Found detailed documentation")
 
+        section_headings = main_content.find_all(['h2', 'h3'], class_='section-header')
+        for heading in section_headings:
+            heading_text = heading.get_text().strip()
+            page_content.append(f"\n## {heading_text}\n")
+            
+            section = heading.parent
+            if section:
+                items = section.find_all(class_=['item-table', 'impl-items'])
+                for item in items:
+                    item_text = item.get_text().strip()
+                    if item_text:
+                        page_content.append(f"{item_text}\n")
+            
+            self.progress_callback(f"Found section: {heading_text}")
+
         for impl_section in main_content.find_all('section', id=lambda x: x and x.startswith('impl')):
             if impl_title := impl_section.find(['h2', 'h3']):
                 title_text = impl_title.get_text().strip()
@@ -90,6 +105,35 @@ class DocsRsScraper:
             for impl_item in impl_section.find_all(class_='impl-items'):
                 if item_text := impl_item.get_text().strip():
                     page_content.append(f"```rust\n{item_text}\n```\n")
+
+        reexports = main_content.find('div', id='reexports')
+        if reexports:
+            page_content.append("\n## Re-exports\n")
+            for item in reexports.find_all(class_='item'):
+                item_text = item.get_text().strip()
+                if item_text:
+                    page_content.append(f"{item_text}\n")
+            self.progress_callback("Found re-exports")
+
+        section_categories = [
+            'modules', 'macros', 'structs', 'enums', 'traits', 
+            'types', 'functions', 'constants', 'attributes'
+        ]
+        
+        for category in section_categories:
+            section = main_content.find('div', id=category)
+            if section:
+                page_content.append(f"\n## {category.title()}\n")
+                
+                for item in section.find_all(['div', 'li'], class_=['item', 'struct', 'enum', 'trait', 'fn']):
+                    item_text = item.get_text().strip()
+                    if item_text:
+                        if any(keyword in item_text.lower() for keyword in ['fn ', 'struct ', 'enum ', 'trait ', 'type ', 'impl ']):
+                            page_content.append(f"```rust\n{item_text}\n```\n")
+                        else:
+                            page_content.append(f"{item_text}\n")
+                
+                self.progress_callback(f"Found {category} section")
 
         page_content.append("\n")
         
@@ -105,14 +149,22 @@ class DocsRsScraper:
         
         crate_path = self.base_url.rstrip('/')
         
-        item_tables = soup.find_all('ul', class_='item-table')
+        nav_elements = [
+            soup.find_all('ul', class_='item-table'),
+            soup.find_all('div', class_='sidebar-elems'),
+            soup.find_all('nav', class_='sidebar'),
+            soup.find_all('section', class_='block'),
+        ]
         
-        for table in item_tables:
-            for item in table.find_all('div', class_='item-name'):
-                if link := item.find('a', href=True):
+        for elements in nav_elements:
+            for element in elements:
+                for link in element.find_all('a', href=True):
                     href = link['href']
                     if href.startswith('./'):
                         href = href[2:]
+                    if href.startswith('#'):
+                        continue
+                        
                     full_url = f"{crate_path}/{href}"
                     
                     if (full_url.startswith(crate_path) and
@@ -120,6 +172,28 @@ class DocsRsScraper:
                         not 'index.html' in full_url and
                         full_url not in self.visited_urls):
                         links.append(full_url)
+        
+        main_content = (
+            soup.find('div', {'id': 'main-content'}) or 
+            soup.find('div', class_='rustdoc')
+        )
+        
+        if main_content:
+            for link in main_content.find_all('a', href=True):
+                href = link['href']
+                if href.startswith('./'):
+                    href = href[2:]
+                if href.startswith('#'):
+                    continue
+                    
+                full_url = f"{crate_path}/{href}"
+                
+                if (full_url.startswith(crate_path) and
+                    not 'target-redirect' in full_url and
+                    not 'index.html' in full_url and
+                    full_url not in self.visited_urls and
+                    full_url not in links):
+                    links.append(full_url)
         
         return links
 
